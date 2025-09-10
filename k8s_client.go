@@ -102,16 +102,3 @@ func NewClientFromConfig(config *rest.Config) (*Client, error) {
 
 	return &Client{kubeClient, istioClient, config, log}, nil
 }
-
-func getClusterNameFromKubeconfig() (string, error) {
-	rules := clientcmd.NewDefaultClientConfigLoadingRules()
-	loader := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, &clientcmd.ConfigOverrides{})
-	rawConfig, err := loader.RawConfig()
-	if err != nil {
-		return "", fmt.Errorf("failed to load kubeconfig: %w", err)
-	}
-
-	ctx := rawConfig.CurrentContext
-	cluster := rawConfig.Contexts[ctx].Cluster
-	return cluster, nil
-}
