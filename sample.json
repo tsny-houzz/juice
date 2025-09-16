@@ -9,7 +9,21 @@
     "version": ""
   },
   "level": "access",
-  "levelMeta": {},
+  "levelMeta": {
+    "request": {
+      "commandName": "ProSolutionHomePage",
+      "host": "pro.stghouzz.com",
+      "ip": "24.207.212.86, 24.207.212.86, 140.248.78.40,172.19.53.24",
+      "site": "101",
+      "url": "/"
+    },
+    "requestId": "5a7cdbd4-0d6f-44a3-bc69-0ff3011cddc2",
+    "user": {
+      "id": 77956350,
+      "name": "taylor_snyder31",
+      "vid": "98b60f74-10a6-402f-ab27-b5f22ff7709b"
+    }
+  },
   "logVersion": "v2",
   "message": "",
   "metadata": {
@@ -37,7 +51,7 @@
     "user-agent": "Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.7339.127 Mobile Safari/537.36 (compatible; GoogleOther)"
   },
   "spanId": "56c968c2c287f6d9",
-  "stack": "",
+  "stack": "TypeError: Cannot read properties of null (reading 'forEach')\n    at /www/node_modules/@houzz/hp-shared-components/data-fetchers/EntitlementVersionsDataFetcher.js:28:35\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at async Promise.allSettled (index 0)",
   "timestamp": 1757983428153,
   "traceId": "9e9e7a53d85f7581692f9ab2ecec3f19"
 }

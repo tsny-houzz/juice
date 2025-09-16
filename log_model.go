@@ -19,7 +19,15 @@ type LogRecord struct {
 }
 
 type LevelMeta struct {
-	Request LevelMetaRequest `json:"request"`
+	Request   LevelMetaRequest `json:"request"`
+	RequestID string           `json:"requestId"`
+	User      User             `json:"user"`
+}
+
+type User struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+	VID  string `json:"vid"`
 }
 
 type LevelMetaRequest struct {

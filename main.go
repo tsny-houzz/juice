@@ -26,7 +26,9 @@ func main() {
 	var raw bool
 	var interactiveMode bool
 	var podName string
+	var verbose bool
 
+	flag.BoolVar(&verbose, "v", false, "Verbose mode")
 	flag.StringVar(&logLevelFlag, "log-level", "", "Only print logs with this level (case-insensitive)")
 	flag.BoolVar(&printFullStruct, "full", false, "Print the full log struct")
 	flag.BoolVar(&raw, "raw", false, "Print raw log lines without any formatting")
@@ -155,7 +157,10 @@ func main() {
 		var rec LogRecord
 		if err := json.Unmarshal([]byte(line), &rec); err != nil {
 			// Print anyway
-			fmt.Println(line)
+			fmt.Println("non-json:", line)
+			if verbose {
+				fmt.Println("unmarshal error:", err.Error())
+			}
 			continue
 		}
 
@@ -178,11 +183,19 @@ func main() {
 		// If Message is non-empty, print just the message.
 		if strings.TrimSpace(rec.Message) != "" {
 			coloredLevel := colorizeLevel(rec.Level)
-			msg := fmt.Sprintf("[%v] %v", coloredLevel, rec.Message)
+			msg := fmt.Sprintf("[%v] ", coloredLevel)
 			if rec.LevelMeta.Request.URL != "" {
-				msg = fmt.Sprintf("[%v] [%v] %v", coloredLevel, rec.LevelMeta.Request.URL, rec.Message)
+				msg += fmt.Sprintf("[%v]", rec.LevelMeta.Request.URL)
 			}
+			if rec.LevelMeta.User.Name != "" {
+				msg += fmt.Sprintf(" [%v]", rec.LevelMeta.User.Name)
+			}
+			msg += fmt.Sprintf(" %v", rec.Message)
 			fmt.Println(msg)
+			if rec.Level == "error" && rec.Stack != "" {
+				// Pretty print the stack if it's an error log with a stack trace.
+				fmt.Println(rec.Stack)
+			}
 			continue
 		}
 
