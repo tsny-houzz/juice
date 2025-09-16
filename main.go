@@ -25,11 +25,13 @@ func main() {
 	var printFullStruct bool
 	var raw bool
 	var interactiveMode bool
+	var podName string
 
 	flag.StringVar(&logLevelFlag, "log-level", "", "Only print logs with this level (case-insensitive)")
 	flag.BoolVar(&printFullStruct, "full", false, "Print the full log struct")
 	flag.BoolVar(&raw, "raw", false, "Print raw log lines without any formatting")
 	flag.BoolVar(&interactiveMode, "i", false, "Interactive mode to select app label")
+	flag.StringVar(&podName, "pod", "", "If set, tail logs from this specific pod")
 	flag.Parse()
 
 	app := envOr("APP", "jukwaa-main")
@@ -38,6 +40,8 @@ func main() {
 
 	if interactiveMode {
 		c, _ := InferClient()
+		// findPods(namespace)
+		// return
 
 		dps, err := c.Kube.AppsV1().Deployments(namespace).List(context.TODO(), metav1.ListOptions{})
 		if err != nil {
@@ -96,10 +100,17 @@ func main() {
 
 	args := []string{
 		"logs", "-f",
-		"-l", fmt.Sprintf("app=%s", app),
-		"-c", container,
 		"-n", namespace,
 		"--ignore-errors",
+	}
+	if podName != "" {
+		args = append(args, podName)
+	} else {
+		args = append(args, "-l", fmt.Sprintf("app=%s", app))
+	}
+
+	if container != "" {
+		args = append(args, "-c", container)
 	}
 
 	ctx, cancel := signalContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -251,9 +262,10 @@ func shortCurlish(rec LogRecord) string {
 	rt := nonEmpty(md.ResponseTimeMS, "?") + "ms"
 	ip := nonEmpty(md.ClientIP, md.RemoteAddr)
 
-	return fmt.Sprintf("%s %s | %s %s | %s | %s",
+	return fmt.Sprintf("%s %s %s | %s %s | %s | %s",
 		method,
 		url,
+		md.Domain,
 		status,
 		rt,
 		ip,
@@ -289,4 +301,25 @@ func envOr(k, def string) string {
 		return v
 	}
 	return def
+}
+
+func findPods(ns string) {
+	c, _ := InferClient()
+
+	pods, err := c.Kube.CoreV1().Pods(ns).List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to list pods in namespace %s: %v\n", ns, err)
+		os.Exit(1)
+	}
+
+	podNames := []string{}
+	for _, pod := range pods.Items {
+		podNames = append(podNames, pod.Name)
+	}
+
+	sort.Strings(podNames)
+
+	for _, name := range podNames {
+		fmt.Printf("Pod: %s\n", name)
+	}
 }
