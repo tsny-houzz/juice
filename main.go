@@ -40,9 +40,6 @@ func main() {
 
 	if interactiveMode {
 		c, _ := InferClient()
-		// findPods(namespace)
-		// return
-
 		dps, err := c.Kube.AppsV1().Deployments(namespace).List(context.TODO(), metav1.ListOptions{})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to list deployments in namespace %s: %v\n", namespace, err)
@@ -301,25 +298,4 @@ func envOr(k, def string) string {
 		return v
 	}
 	return def
-}
-
-func findPods(ns string) {
-	c, _ := InferClient()
-
-	pods, err := c.Kube.CoreV1().Pods(ns).List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to list pods in namespace %s: %v\n", ns, err)
-		os.Exit(1)
-	}
-
-	podNames := []string{}
-	for _, pod := range pods.Items {
-		podNames = append(podNames, pod.Name)
-	}
-
-	sort.Strings(podNames)
-
-	for _, name := range podNames {
-		fmt.Printf("Pod: %s\n", name)
-	}
 }
