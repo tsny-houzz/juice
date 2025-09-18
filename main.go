@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -16,51 +15,158 @@ import (
 	"time"
 
 	"github.com/manifoldco/promptui"
+	"github.com/urfave/cli"
 	appsV1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type Options struct {
+	Verbose     bool
+	MaxPods     int
+	LogLevel    string
+	Grep        string
+	PrintFull   bool
+	Raw         bool
+	Interactive bool
+	PodName     string
+	App         string
+	Container   string
+	Namespace   string
+	Context     string
+}
+
 func main() {
-	var logLevelFlag string
-	var printFullStruct bool
-	var raw bool
-	var interactiveMode bool
-	var podName string
-	var verbose bool
+	app := &cli.App{
+		Name:  "log-tail",
+		Usage: "Tail Kubernetes logs with optional JSON parsing & filters",
+		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:  "v",
+				Usage: "Verbose mode",
+			},
+			&cli.IntFlag{
+				Name:  "max-pods",
+				Usage: "Maximum number of pods to tail logs from",
+				Value: 20,
+			},
+			&cli.StringFlag{
+				Name:   "level",
+				Usage:  "Only print logs with this level (case-insensitive)",
+				EnvVar: "LOG_LEVEL",
+			},
+			&cli.StringFlag{
+				Name:  "grep",
+				Usage: "Only print logs matching this grep pattern",
+			},
+			&cli.BoolFlag{
+				Name:  "full",
+				Usage: "Print the full log struct",
+			},
+			&cli.BoolFlag{
+				Name:  "raw",
+				Usage: "Print raw log lines without any formatting",
+			},
+			&cli.BoolFlag{
+				Name:  "i",
+				Usage: "Interactive mode to select app label",
+			},
+			&cli.StringFlag{
+				Name:  "pod",
+				Usage: "If set, tail logs from this specific pod",
+			},
+			&cli.StringFlag{
+				Name:  "app",
+				Usage: "App label to match",
+				Value: "jukwaa-main",
+			},
+			&cli.StringFlag{
+				Name:  "c",
+				Usage: "Container name to tail (empty = first container)",
+			},
+			&cli.StringFlag{
+				Name:  "ctx",
+				Usage: "Kubernetes context",
+			},
+			&cli.StringFlag{
+				Name:  "n",
+				Usage: "Kubernetes namespace",
+			},
+		},
+		Action: func(c *cli.Context) error {
+			opts := Options{
+				Verbose:     c.Bool("v"),
+				MaxPods:     c.Int("max-pods"),
+				LogLevel:    c.String("level"),
+				Grep:        c.String("grep"),
+				PrintFull:   c.Bool("full"),
+				Raw:         c.Bool("raw"),
+				Interactive: c.Bool("i"),
+				PodName:     c.String("pod"),
+				App:         c.String("app"),
+				Container:   c.String("c"),
+				Namespace:   c.String("n"),
+				Context:     c.String("ctx"),
+			}
 
-	flag.BoolVar(&verbose, "v", false, "Verbose mode")
-	flag.StringVar(&logLevelFlag, "log-level", "", "Only print logs with this level (case-insensitive)")
-	flag.BoolVar(&printFullStruct, "full", false, "Print the full log struct")
-	flag.BoolVar(&raw, "raw", false, "Print raw log lines without any formatting")
-	flag.BoolVar(&interactiveMode, "i", false, "Interactive mode to select app label")
-	flag.StringVar(&podName, "pod", "", "If set, tail logs from this specific pod")
-	flag.Parse()
+			return run(opts)
+		},
+	}
+	err := app.Run(os.Args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+}
 
-	app := envOr("APP", "jukwaa-main")
-	container := envOr("CONTAINER_NAME", "jukwaa")
-	namespace := envOr("NAMESPACE", "stghouzz")
-
-	if interactiveMode {
+func run(opts Options) error {
+	if opts.Interactive {
 		c, _ := InferClient()
-		dps, err := c.Kube.AppsV1().Deployments(namespace).List(context.TODO(), metav1.ListOptions{})
+
+		if opts.Namespace == "" {
+			nsList, err := c.Kube.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "failed to list namespaces: %v\n", err)
+				os.Exit(1)
+			}
+
+			namespaces := []string{}
+			for _, ns := range nsList.Items {
+				namespaces = append(namespaces, ns.Name)
+			}
+			sort.Strings(namespaces)
+
+			p := promptui.Select{
+				Label: "Select Namespace",
+				Items: namespaces,
+				Size:  20,
+			}
+			_, res, err := p.Run()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "prompt failed: %v\n", err)
+				os.Exit(1)
+			}
+			opts.Namespace = res
+		}
+
+		dps, err := c.Kube.AppsV1().Deployments(opts.Namespace).List(context.TODO(), metav1.ListOptions{})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "failed to list deployments in namespace %s: %v\n", namespace, err)
+			fmt.Fprintf(os.Stderr, "failed to list deployments in namespace %s: %v\n", opts.Namespace, err)
 			os.Exit(1)
 		}
 
 		// Filter for dps with both "app" and "component" labels
-		newDps := map[string]appsV1.Deployment{}
+		dpMap := map[string]appsV1.Deployment{}
 		for _, dp := range dps.Items {
 			if *dp.Spec.Replicas == 0 {
 				continue
 			}
 			if dp.Labels["component"] != "" && dp.Labels["app"] != "" {
-				newDps[dp.GetName()] = dp
+				dpMap[dp.GetName()] = dp
 			}
 		}
 
 		dpNames := []string{}
-		for _, dp := range newDps {
+		for _, dp := range dpMap {
 			dpNames = append(dpNames, dp.GetName())
 		}
 
@@ -78,8 +184,8 @@ func main() {
 		}
 
 		containerNames := []string{}
-		dp := newDps[res]
-		app = dp.Labels["app"]
+		dp := dpMap[res]
+		opts.App = dp.Labels["app"]
 
 		for _, c := range dp.Spec.Template.Spec.Containers {
 			containerNames = append(containerNames, c.Name)
@@ -90,7 +196,7 @@ func main() {
 			Items: containerNames,
 			Size:  20,
 		}
-		_, container, err = p.Run()
+		_, opts.Container, err = p.Run()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "prompt failed: %v\n", err)
 			os.Exit(1)
@@ -99,17 +205,27 @@ func main() {
 
 	args := []string{
 		"logs", "-f",
-		"-n", namespace,
+		"-n", opts.Namespace,
 		"--ignore-errors",
-	}
-	if podName != "" {
-		args = append(args, podName)
-	} else {
-		args = append(args, "-l", fmt.Sprintf("app=%s", app))
+		"--tail", "100",
 	}
 
-	if container != "" {
-		args = append(args, "-c", container)
+	if opts.Context != "" {
+		args = append(args, "--context", opts.Context)
+	}
+	if opts.MaxPods > 0 {
+		args = append(args, fmt.Sprintf("--max-log-requests=%d", opts.MaxPods))
+	}
+	if opts.PodName != "" {
+		args = append(args, opts.PodName)
+	} else {
+		args = append(args, "-l", fmt.Sprintf("app=%s", opts.App))
+	}
+
+	if opts.Container != "" {
+		args = append(args, "-c", opts.Container)
+	} else {
+		args = append(args, "--all-containers")
 	}
 
 	ctx, cancel := signalContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -144,13 +260,17 @@ func main() {
 			continue
 		}
 
-		if raw {
-			fmt.Println(line)
+		// Skip common health check logs
+		if strings.Contains(line, "readiness") || strings.Contains(line, "liveness") {
 			continue
 		}
 
-		// Skip common health check logs
-		if strings.Contains(line, "readiness") || strings.Contains(line, "liveness") {
+		if opts.Grep != "" && !strings.Contains(line, opts.Grep) {
+			continue
+		}
+
+		if opts.Raw {
+			fmt.Println(line)
 			continue
 		}
 
@@ -158,18 +278,18 @@ func main() {
 		if err := json.Unmarshal([]byte(line), &rec); err != nil {
 			// Print anyway
 			fmt.Println("non-json:", line)
-			if verbose {
+			if opts.Verbose {
 				fmt.Println("unmarshal error:", err.Error())
 			}
 			continue
 		}
 
 		// If log-level flag is set, only print matching levels
-		if logLevelFlag != "" && !strings.EqualFold(rec.Level, logLevelFlag) {
+		if opts.LogLevel != "" && !strings.EqualFold(rec.Level, opts.LogLevel) {
 			continue
 		}
 
-		if printFullStruct {
+		if opts.PrintFull {
 			// Pretty print the full struct
 			out, err := json.MarshalIndent(rec, "", "  ")
 			if err != nil {
@@ -210,7 +330,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "scan error: %v\n", err)
 	}
 
-	_ = cmd.Wait()
+	return cmd.Wait()
 }
 
 // -------- Helpers --------
