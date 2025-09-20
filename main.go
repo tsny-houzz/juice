@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"os/signal"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -167,12 +169,12 @@ func run(opts Options) error {
 
 		dpOpts := []string{}
 		dpNames := []string{}
-		for _, dp := range dpMap {
+		appNames := slices.Sorted(maps.Keys(dpMap))
+		for _, app := range appNames {
+			dp := dpMap[app]
 			dpOpts = append(dpOpts, fmt.Sprintf("%v (%v)", dp.Labels["app"], dp.CreationTimestamp.Local().Format("2006-01-02 15:04:05")))
 			dpNames = append(dpNames, dp.GetName())
 		}
-
-		sort.Strings(dpOpts)
 
 		p := promptui.Select{
 			Label: "Select Deployment",
@@ -185,10 +187,10 @@ func run(opts Options) error {
 			os.Exit(1)
 		}
 
-		containerNames := []string{}
 		dp := dpMap[dpNames[i]]
 		opts.App = dp.Labels["app"]
 
+		containerNames := []string{}
 		for _, c := range dp.Spec.Template.Spec.Containers {
 			containerNames = append(containerNames, c.Name)
 		}

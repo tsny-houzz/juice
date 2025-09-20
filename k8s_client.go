@@ -30,7 +30,7 @@ func InferClient() (*Client, error) {
 	if err == nil {
 		return NewDevClient("/root/.kube/config")
 	}
-	fmt.Printf("No kubeconfig found at /root/.kube/config: %v\n", err)
+	// fmt.Printf("No kubeconfig found at /root/.kube/config: %v\n", err)
 
 	if configPath := os.Getenv("KUBECONFIG"); configPath != "" {
 		return NewDevClient(configPath)
@@ -82,12 +82,6 @@ func NewClientFromConfig(config *rest.Config) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Kubernetes clientset: %v", err)
 	}
-
-	serverVersion, err := kubeClient.Discovery().ServerVersion()
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Kubernetes cluster: %v", err)
-	}
-	fmt.Printf("Connected to cluster, server version: %s\n", serverVersion.GitVersion)
 
 	istioClient, err := istio.NewForConfig(config)
 	if err != nil {
