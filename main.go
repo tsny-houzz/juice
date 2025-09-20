@@ -165,26 +165,28 @@ func run(opts Options) error {
 			}
 		}
 
+		dpOpts := []string{}
 		dpNames := []string{}
 		for _, dp := range dpMap {
+			dpOpts = append(dpOpts, fmt.Sprintf("%v (%v)", dp.Labels["app"], dp.CreationTimestamp.Local().Format("2006-01-02 15:04:05")))
 			dpNames = append(dpNames, dp.GetName())
 		}
 
-		sort.Strings(dpNames)
+		sort.Strings(dpOpts)
 
 		p := promptui.Select{
 			Label: "Select Deployment",
-			Items: dpNames,
+			Items: dpOpts,
 			Size:  20,
 		}
-		_, res, err := p.Run()
+		i, _, err := p.Run()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "prompt failed: %v\n", err)
 			os.Exit(1)
 		}
 
 		containerNames := []string{}
-		dp := dpMap[res]
+		dp := dpMap[dpNames[i]]
 		opts.App = dp.Labels["app"]
 
 		for _, c := range dp.Spec.Template.Spec.Containers {
@@ -387,16 +389,16 @@ func shortCurlish(rec LogRecord) string {
 
 	// Pick a handful of useful fields.
 	method := nonEmpty(md.Method, "GET")
-	url := nonEmpty(md.URL, "/")
 	status := nonEmpty(md.Status, "-")
+	url := nonEmpty(md.URL, "/")
 	rt := nonEmpty(md.ResponseTimeMS, "?") + "ms"
 	ip := nonEmpty(md.ClientIP, md.RemoteAddr)
 
 	return fmt.Sprintf("%s %s %s | %s %s | %s | %s",
 		method,
+		statusToColor(status),
 		url,
 		md.Domain,
-		status,
 		rt,
 		ip,
 		md.RequestID,
@@ -424,6 +426,19 @@ func colorizeLevel(level string) string {
 	default:
 		return level
 	}
+}
+
+func statusToColor(status string) string {
+	if strings.HasPrefix(status, "2") {
+		return "\033[32m" + status + "\033[0m" // green
+	} else if strings.HasPrefix(status, "3") {
+		return "\033[36m" + status + "\033[0m" // cyan
+	} else if strings.HasPrefix(status, "4") {
+		return "\033[33m" + status + "\033[0m" // yellow
+	} else if strings.HasPrefix(status, "5") {
+		return "\033[31m" + status + "\033[0m" // red
+	}
+	return status
 }
 
 func envOr(k, def string) string {
